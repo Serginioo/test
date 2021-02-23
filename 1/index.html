@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rxjs Timer</title>
+</head>
+
+<body>
+    <div class="timer-wrap">
+        <div id="time-display"></div>
+        <button id="start-stop" >Start / Stop</button>
+        <button id="wait" >Wait</button>
+        <button id="reset" onclick="event.stopPropagation()">Reset</button>
+    </div>
+</body>
+<script src="https://npmcdn.com/@reactivex/rxjs@5.0.0-rc.1/dist/global/Rx.js"></script>
+<script type="text/javascript">
+    /**
+     * State
+     */
+    let timerValue$ = new Rx.BehaviorSubject(0);
+    let isCounting$ = new Rx.BehaviorSubject(false);
+    /**
+     *Elements
+     */
+    const timeDisplayComponent = getElementById('time-display');
+    const startStopBtnComponent = getElementById('start-stop');
+    const waitBtnComponent = getElementById('wait');
+    const resetBtnComponent = getElementById('reset');
+    /**
+     * Click handlers
+     */
+    const startStopClicked$ = getObservableFromEvent(startStopBtnComponent, 'click')
+            .subscribe(() => {
+                const oldIsCounting = isCounting$.value;
+                const oldTimerValue = timerValue$.value;
+                const isCounting = !oldIsCounting;
+                const newTimerValue = isCounting ? oldTimerValue : 0;
+                timerValue$.next(newTimerValue);
+                isCounting$.next(isCounting);
+            });
+    const waitClicked$ = getDoubleClickObservable(waitBtnComponent)
+        .subscribe(() => {
+            isCounting$.next(false);
+        })
+    const resetClicked$ = getObservableFromEvent(resetBtnComponent, 'click')
+        .subscribe(() => {
+            timerValue$.next(0);
+            isCounting$.next(true);
+        });
+    /**
+     * Counting logic
+     */
+    const timerStarted$ = isCounting$
+        .filter(isCounting => !!isCounting)
+        .map(() => timerValue$.value); // emit timer start value
+    const timerStopped$ = isCounting$
+        .filter(isCounting => !isCounting)
+        .map(() => timerValue$.value); // emit timer end value
+    const timerValueSub$ = timerStarted$
+        .switchMap((initial) => {
+            const current$ = Rx.Observable.timer(0, 1000)
+                .scan((acc) => {
+                    return acc += 1
+                }, initial)
+                .takeUntil(timerStopped$);
+            const final$ = timerStopped$.take(1);
+            // emit current value + final value, when stops
+            return Rx.Observable.merge(current$, final$);
+        })
+        .subscribe(curr => timerValue$.next(curr));
+    /**
+     * Write timer value to html
+     */
+    timerValue$
+        .subscribe(val => writeTextToElement(timeDisplayComponent, formatSeconds(val)));
+
+    /**
+     * Helper functions
+     */
+    function getDoubleClickObservable(el) {
+        const clickStream = getObservableFromEvent(el, 'click')
+        return clickStream
+            .buffer(clickStream.throttleTime(299))
+            .map(list => list.length)
+            .filter(x => x === 2)
+    }
+
+    function getObservableFromEvent(el, event) {
+        return Rx.Observable.fromEvent(el, event);
+    }
+
+    function getElementById(id) {
+        return document.querySelector(`#${id}`);
+    }
+
+    function writeTextToElement(el, text) {
+        if (el) {
+            el.innerText = text;
+        }
+    }
+
+    function formatSeconds(s) {
+        return new Date(s * 1000).toISOString().substr(11, 8)
+    }
+</script>
+
+</html>
+
